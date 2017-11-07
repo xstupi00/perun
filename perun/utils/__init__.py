@@ -116,7 +116,7 @@ def get_supported_module_names(package):
             package
         ))
     return {
-        'vcs': ['git'],
+        'vcs': ['git', 'tagit'],
         'collect': ['complexity', 'memory', 'time'],
         'postprocess': ['filter', 'normalizer', 'regression_analysis'],
         'view': ['alloclist', 'bars', 'flamegraph', 'flow', 'heapmap', 'raw', 'scatter']
