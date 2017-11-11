@@ -1,23 +1,40 @@
+import perun.vcs
+import perun.logic.config as config
+
+from perun.logic.pcs import PCS
+
 __author__ = 'Tomas Fiedor'
 
 
-def _init(vcs_path, vcs_init_params):
+def _init(pcs_path, vcs_path, vcs_init_params, **_):
     """Initialize or reinitialize empty tagit repository.
 
     Internally tagit repositories are the same as git repositories. Tagit only serves as another
     wrapper that manages the identifications and history using git tags.
 
-    If ``vcs_init_params['single_versioning']`` is ``True`` then tagit will not create new branches
+    If ``vcs_init_params['branch_on_major']`` is ``True`` then tagit will not create new branches
     for new major versions and overall history of tags will be linear. Otherwise whenever we are
     registering new version, we create new branch for major version and new commit for minor
     version.
 
+    :param str pcs_path: path where the perun repository was initialized
     :param str vcs_path: path, where the tagit repository will be initialized
     :param dict vcs_init_params: (key, value) dictionary of parameters for initialized tagit
         repository. This contains both parameters for tagit and for git
     :return: whether the tagit repository was successfully initialized
     """
-    return False
+    # Extract the branch_on_major option, and push rest to the git
+    branch_on_major = vcs_init_params.get('branch_on_major', False)
+    vcs_init_params.pop('branch_on_major', None)
+
+    # Delegate initialization of wrapped to perun.vcs.git module
+    vcs_init_result = perun.vcs.init('git', vcs_path=vcs_path, vcs_init_params=vcs_init_params)
+
+    # Set branch_on_major by default to False. If we set something in vcs_init then we use the value
+    pcs = PCS(pcs_path)
+    config.set_key_at_config(pcs.local_config(), 'vcs.branch_on_major', branch_on_major)
+
+    return vcs_init_result
 
 
 def _get_minor_head(tagit_repo):

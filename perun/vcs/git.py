@@ -46,7 +46,7 @@ def create_repo_from_path(func):
     return wrapper
 
 
-def _init(vcs_path, vcs_init_params):
+def _init(vcs_path, vcs_init_params, **_):
     """
     Arguments:
         vcs_path(path): path where the vcs will be initialized

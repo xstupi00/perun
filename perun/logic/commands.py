@@ -149,14 +149,13 @@ def init(dst, **kwargs):
 
     Arguments:
         dst(path): path where the pcs will be initialized
-        pcs(PCS): object with performance control system wrapper
     """
     perun_log.msg_to_stdout("call init({}, {})".format(dst, kwargs), 2)
 
     # First init the wrapping repository well
     vcs_type = kwargs['vcs_type']
     vcs_path = kwargs['vcs_path'] or dst
-    vcs_params = kwargs['vcs_params']
+    vcs_params = kwargs['vcs_params'] or {}
 
     # Construct local config
     vcs_config = {
@@ -180,7 +179,12 @@ def init(dst, **kwargs):
     # If the wrapped repo could not be initialized we end with error. The user should adjust this
     # himself and fix it in the config. Note that this decision was made after tagit design,
     # where one needs to further adjust some options in initialized directory.
-    if vcs_type and not vcs.init(vcs_type, vcs_path, vcs_params):
+    vcs_call_params = {
+        'pcs_path': dst,
+        'vcs_path': vcs_path,
+        'vcs_init_params': vcs_params
+    }
+    if vcs_type and not vcs.init(vcs_type, **vcs_call_params):
         perun_log.error("Could not initialize empty {0} repository at {1}.\n"
                         "Either reinitialize perun with 'perun init' or initialize {0} repository"
                         "manually and fix the path to vcs in 'perun config --edit'"
