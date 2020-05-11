@@ -275,9 +275,7 @@ def get_stdout_from_external_command(command, stdin=None):
     :param handle stdin: the command input as a file handle
     :return: string representation of output of command
     """
-    output = subprocess.check_output(
-        [c for c in command if c != ''], stderr=subprocess.STDOUT, stdin=stdin
-    )
+    output = subprocess.check_output(command, stderr=subprocess.STDOUT, stdin=stdin)
     return output.decode('utf-8')
 
 

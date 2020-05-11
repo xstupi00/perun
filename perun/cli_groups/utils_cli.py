@@ -9,6 +9,7 @@ import click
 import perun.logic.commands as commands
 import perun.logic.temp as temp
 import perun.logic.stats as stats
+import perun.utils.indicators as indicators
 import perun.utils.script_helpers as scripts
 import perun.utils.cli_helpers as cli_helpers
 import perun.utils.log as perun_log
@@ -246,3 +247,33 @@ def stats_sync():
     has been manually tampered with and some files or directories were created or deleted by a user.
     """
     commands.sync_stats()
+
+
+@utils_group.group('indicators')
+def indicators_group():
+    """
+    TODO documentation
+    """
+    pass
+
+
+@indicators_group.command('collect')
+@click.option('--object-path', '-o', nargs=1, required=False,
+              type=click.Path(exists=True, readable=True), metavar='<path>',
+              help='The directory containing the gcov data files, ot the object path name.')
+@click.option('--ignore-object', '-i', required=False, multiple=True,
+              default=[], type=str, metavar='<str>',
+              help="The functions which will be ignored by gcov analysis.")
+def collect_indicators(object_path, ignore_object):
+    """
+    TODO documentation
+    """
+    indicators.collect(object_path, ignore_object)
+
+
+@indicators_group.command('evaluate')
+def evaluate_indicators():
+    """
+    TODO documentation
+    """
+    indicators.evaluate()

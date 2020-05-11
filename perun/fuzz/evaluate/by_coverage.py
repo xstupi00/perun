@@ -95,6 +95,11 @@ def get_src_files(source_path):
     return sources
 
 
+def get_gcov_version():
+    gcov_output = execute_bin(["gcov", "--version"])
+    return int((gcov_output["output"].split("\n")[0]).split()[-1][0])
+
+
 def baseline_testing(executable, workloads, config, **_):
     """ Coverage based testing initialization. Wrapper over function `get_initial_coverage`.
 
@@ -108,8 +113,7 @@ def baseline_testing(executable, workloads, config, **_):
     config.coverage.source_files = get_src_files(config.coverage.source_path)
 
     # get gcov version
-    gcov_output = execute_bin(["gcov", "--version"])
-    config.coverage.gcov_version = int((gcov_output["output"].split("\n")[0]).split()[-1][0])
+    config.coverage.gcov_version = get_gcov_version()
 
     return get_initial_coverage(executable, workloads, config.hang_timeout, config)
 
