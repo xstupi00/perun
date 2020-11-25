@@ -1,0 +1,34 @@
+#! /usr/bin/env stap
+
+global insns
+global cycles
+global branches
+global cacherefs
+global insn
+
+probe perf.hw.instructions.process(@1).counter("insns") {}
+probe perf.hw.cpu_cycles.process(@1).counter("cycles") {}
+probe perf.hw.branch_instructions.process(@1).counter("branches") {}
+probe perf.hw.cache_references.process(@1).counter("cache_refs") {}
+
+probe process(@1).function("*")
+{
+ insn["insns"] = @perf("insns")
+ insn["cycles"] = @perf("cycles")
+ insn["branches"] = @perf("branches")
+ insn["cache_refs"] = @perf("cache_refs")
+
+ insns[ppfunc()] <<< (insn["insns"])
+ cycles[ppfunc()] <<< insn["cycles"]
+ branches[ppfunc()] <<< insn["branches"]
+ cacherefs[ppfunc()] <<< insn["cache_refs"]
+}
+
+probe end {
+  foreach (fn+ in insns)
+    printf(
+      "%s %d %d %d %d %d\n",
+      fn, @count(insns[fn]), @avg(insns[fn]), @avg(cycles[fn]), @avg(branches[fn]), @avg(cacherefs[fn])
+    )
+  exit()
+}

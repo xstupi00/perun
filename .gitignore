@@ -1,1 +1,7 @@
 *.pyc
+.idea
+.perun
+.pytest_cache
+perun.egg-info
+perun.log
+dist
