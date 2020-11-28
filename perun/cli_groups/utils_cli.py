@@ -260,7 +260,7 @@ def indicators_group():
 @indicators_group.command('collect')
 @click.option('--object-path', '-o', nargs=1, required=False,
               type=click.Path(exists=True, readable=True), metavar='<path>',
-              help='The directory containing the gcov data files, ot the object path name.')
+              help='The directory containing the gcov data files, or the object path name.')
 @click.option('--ignore-object', '-i', required=False, multiple=True,
               default=[], type=str, metavar='<str>',
               help="The functions which will be ignored by gcov analysis.")
@@ -268,12 +268,21 @@ def collect_indicators(object_path, ignore_object):
     """
     TODO documentation
     """
-    indicators.collect(object_path, ignore_object)
+    gcov_obj = indicators.GCOVCollect(object_path, ignore_object)
+    nm_obj = indicators.NMCollect(object_path, ignore_object)
+    stap_obj = indicators.StapCollect(object_path, ignore_object)
+    gcov_obj.collect()
+    nm_obj.collect()
+    stap_obj.collect()
 
 
 @indicators_group.command('evaluate')
-def evaluate_indicators():
+@click.option('--minor-version', '-m', nargs=1, required=True, default=None,  metavar='<hash>',
+              is_eager=True, callback=cli_helpers.check_stats_minor_callback,
+              help="The minor version to evaluate the indicators between it and HEAD.")
+def evaluate_indicators(minor_version):
     """
     TODO documentation
     """
-    indicators.evaluate()
+    eval_obj = indicators.Evaluate(minor_version=minor_version)
+    eval_obj.evaluate()
