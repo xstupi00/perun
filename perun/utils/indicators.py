@@ -13,6 +13,7 @@ import perun.fuzz.evaluate.by_coverage as fuzz_utils
 import perun.logic.runner as runner
 import perun.logic.stats as stats
 import perun.utils as utils
+import perun.utils.log as perun_log
 
 from perun.postprocess.regression_analysis.tools import safe_division
 
@@ -30,6 +31,7 @@ class Collect:
     def collect_indicators(self):
         raise NotImplementedError("This method have to implemented in the subclass.")
 
+    @perun_log.print_elapsed_time
     def collect(self):
         job_matrix, _ = runner.construct_job_matrix(**runner.load_job_info_from_config())
         for _, workloads in job_matrix.items():
@@ -124,6 +126,7 @@ class Evaluate:
         self.fun_rate_threshold = 0.25
         self.del_func_threshold = 0.25
         self.new_func_threshold = 0.25
+        self.score_threshold = 1
         self.minor_version = minor_version
         self.head_stats, self.prev_stats = {}, {}
         self.head_gcov_stats, self.prev_gcov_stats = {}, {}
@@ -131,12 +134,24 @@ class Evaluate:
         self.new_funcs, self.del_funcs, self.rel_errs = {}, {}, {}
         self.blocks_diff, self.exec_blocks_diff, self.diff_loc = {}, {}, {}
         self.diff_stats = {}
+        self.functions_score = {}
 
     def evaluate(self):
         self._load_stats()
         self._evaluate_gcov_stats()
         self._evaluate_stap_stats()
-        print("Hello world")
+        self._build_functions_score()
+        print(">> Potential filtered functions:", len(self.functions_score.keys()))
+        print("-f " + " -f ".join(self.functions_score.keys()))
+
+    def _build_functions_score(self):
+        def update_score(iterator):
+            for function in iterator.keys():
+                self.functions_score[function] = self.functions_score.get(function, 0) + 1
+
+        [update_score(functions) for functions in [self.del_funcs, self.new_funcs, self.rel_errs, self.diff_stats]]
+        [update_score(v) for mods in [self.blocks_diff, self.exec_blocks_diff, self.diff_loc] for k, v in mods.items()]
+        self.functions_score = {k: v for (k, v) in self.functions_score.items() if v >= self.score_threshold}
 
     def _load_stats(self):
         self.head_stats = stats.get_stats_of('indicators')
@@ -168,8 +183,9 @@ class Evaluate:
         return diff_stats
 
     def _get_functions_diff(self):
-        print(">> Overall number of functions im modules:\n", {m: len({*f}) for m, f in self.head_gcov_stats.items()})
-        print(">> Overall number of modules:", len({*self.head_gcov_stats}))
+        # print(">> Overall number of functions im modules:\n", {m: len({*f}) for m, f in self.head_gcov_stats.items()})
+        # print(">> Overall number of modules:", len({*self.head_gcov_stats}))
+        print(">> Overall number of functions:", sum([len({*f}) for m, f in self.head_gcov_stats.items()]))
 
         del_functions, new_functions, rel_errors = {}, {}, {}
         for module in self.head_gcov_stats:
@@ -179,16 +195,16 @@ class Evaluate:
             new_functions[module] = safe_division(len({*head_functions} - {*prev_functions}), len({*head_functions}))
             del_functions[module] = safe_division(len({*prev_functions} - {*head_functions}), len({*prev_functions}))
 
-        print(">> Filtered modules by rel_err:",
-              len({k: v for (k, v) in rel_errors.items() if v < self.fun_rate_threshold}))
+        # print(">> Filtered modules by rel_err:",
+        #       len({k: v for (k, v) in rel_errors.items() if v < self.fun_rate_threshold}))
         rel_errors = {k: v for (k, v) in rel_errors.items() if v >= self.fun_rate_threshold}
 
-        print(">> Filtered modules by del_fun:",
-              len({k: v for (k, v) in del_functions.items() if v < self.del_func_threshold}))
+        # print(">> Filtered modules by del_fun:",
+        #       len({k: v for (k, v) in del_functions.items() if v < self.del_func_threshold}))
         del_functions = {k: v for (k, v) in del_functions.items() if v >= self.del_func_threshold}
 
-        print(">> Filtered modules by new_fun:",
-              len({k: v for (k, v) in new_functions.items() if v < self.new_func_threshold}))
+        # print(">> Filtered modules by new_fun:",
+        #       len({k: v for (k, v) in new_functions.items() if v < self.new_func_threshold}))
         new_functions = {k: v for (k, v) in new_functions.items() if v >= self.new_func_threshold}
         return del_functions, new_functions, rel_errors
 
@@ -201,6 +217,6 @@ class Evaluate:
                 f: self._relative_error(head_module[f][key], prev_module.get(f, {}).get(key, 0)) for f in head_module
             }
 
-        print(">> Filtered functions in modules by " + key + ":")
-        print({m: len({f: v for f, v in s.items() if v < self.rel_err_thresholds[key]}) for m, s in rel_errors.items()})
+        # print(">> Filtered functions in modules by " + key + ":")
+        # print({m: len({f: v for f, v in s.items() if v < self.rel_err_thresholds[key]}) for m, s in rel_errors.items()})
         return {m: {f: v for f, v in s.items() if v >= self.rel_err_thresholds[key]} for m, s in rel_errors.items()}
