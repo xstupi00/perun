@@ -97,7 +97,7 @@ def get_src_files(source_path):
 
 def get_gcov_version():
     gcov_output = execute_bin(["gcov", "--version"])
-    return int((gcov_output["output"].split("\n")[0]).split()[-1][0])
+    return int((gcov_output["output"].split("\n")[0]).split()[-1].split('.')[0])
 
 
 def baseline_testing(executable, workloads, config, **_):

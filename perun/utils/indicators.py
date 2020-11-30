@@ -122,7 +122,7 @@ class StapCollect(Collect):
 class Evaluate:
     def __init__(self, minor_version):
         self.diff_stats_keys = STAP_STATS_KEYS
-        self.rel_err_thresholds = {"blocks": 0.25, "blocks_executed": 0.25, "lines": 0.25}
+        self.rel_err_thresholds = {"blocks": 0.25, "blocks_executed": 0.25, "execution_count": 0.25, "lines": 0.25}
         self.fun_rate_threshold = 0.25
         self.del_func_threshold = 0.25
         self.new_func_threshold = 0.25
@@ -132,7 +132,7 @@ class Evaluate:
         self.head_gcov_stats, self.prev_gcov_stats = {}, {}
         self.head_gcov_stats, self.prev_head_stats = {}, {}
         self.new_funcs, self.del_funcs, self.rel_errs = {}, {}, {}
-        self.blocks_diff, self.exec_blocks_diff, self.diff_loc = {}, {}, {}
+        self.blocks_diff, self.exec_blocks_diff, self.exec_count_diff, self.diff_loc = {}, {}, {}, {}
         self.diff_stats = {}
         self.functions_score = {}
 
@@ -142,7 +142,7 @@ class Evaluate:
         self._evaluate_stap_stats()
         self._build_functions_score()
         print(">> Potential filtered functions:", len(self.functions_score.keys()))
-        print("-f " + " -f ".join(self.functions_score.keys()))
+        # print("-f " + " -f ".join(self.functions_score.keys()))
 
     def _build_functions_score(self):
         def update_score(iterator):
@@ -150,7 +150,8 @@ class Evaluate:
                 self.functions_score[function] = self.functions_score.get(function, 0) + 1
 
         [update_score(functions) for functions in [self.del_funcs, self.new_funcs, self.rel_errs, self.diff_stats]]
-        [update_score(v) for mods in [self.blocks_diff, self.exec_blocks_diff, self.diff_loc] for k, v in mods.items()]
+        diffs_list = [self.blocks_diff, self.exec_blocks_diff, self.exec_count_diff, self.diff_loc]
+        [update_score(v) for mods in diffs_list for k, v in mods.items()]
         self.functions_score = {k: v for (k, v) in self.functions_score.items() if v >= self.score_threshold}
 
     def _load_stats(self):
@@ -163,6 +164,7 @@ class Evaluate:
         self.del_funcs, self.new_funcs, self.rel_errs = self._get_functions_diff()
         self.blocks_diff = self._get_rel_errors_of('blocks')
         self.exec_blocks_diff = self._get_rel_errors_of('blocks_executed')
+        self.exec_count_diff = self._get_rel_errors_of('execution_count')
         self.diff_loc = self._get_rel_errors_of('lines')
 
     def _evaluate_stap_stats(self):
