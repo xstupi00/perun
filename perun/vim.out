@@ -1,0 +1,25 @@
+git checkout edf3f97ae
+
+perun utils indicators collect -o src/objects/
+    >> [!] GCOV Collect [DONE] in 103.20s [!]
+    >> [!] NM Collect [DONE] in 1.05s [!]
+    >> [!] Stap Collect [DONE] in 26.79s [!]
+
+git checkout v8.0.0190
+
+perun collect --cmd="./src/vim" --args="-u NONE" --workload="--cmd 'echo len(taglist(\"a\"))' --cmd q" trace -m all
+    >> [!] Collect [DONE] in 2034.90s [!]
+
+perun collect --cmd="./src/vim" --args="-u NONE" --workload="--cmd 'echo len(taglist(\"a\"))' --cmd q" trace -m custom ...
+    >> [!] Collect [DONE] in 315.98s [!]
+
+perun utils indicators collect -o src/objects/
+    >> [!] GCOV Collect [DONE] in 3.71s [!]
+    >> [!] NM Collect [DONE] in 1.06s [!]
+    >> [!] Stap Collect [DONE] in 28.15s [!]
+
+perun utils indicators evaluate -m edf3f97ae2af024708ebb4ac614227327033ca47
+    >> Overall number of functions: 4978
+    >> Potential filtered functions: 567
+
+-f utfc_ptr2len

@@ -257,23 +257,34 @@ def indicators_group():
     pass
 
 
-@indicators_group.command('collect')
+@indicators_group.command('dynamic-collect')
 @click.option('--object-path', '-o', nargs=1, required=False,
               type=click.Path(exists=True, readable=True), metavar='<path>',
               help='The directory containing the gcov data files, or the object path name.')
 @click.option('--ignore-object', '-i', required=False, multiple=True,
               default=[], type=str, metavar='<str>',
               help="The functions which will be ignored by gcov analysis.")
-def collect_indicators(object_path, ignore_object):
+def dynamic_collect(object_path, ignore_object):
     """
     TODO documentation
     """
-    gcov_obj = indicators.GCOVCollect(object_path, ignore_object)
-    nm_obj = indicators.NMCollect(object_path, ignore_object)
-    stap_obj = indicators.StapCollect(object_path, ignore_object)
-    gcov_obj.collect()
-    nm_obj.collect()
-    stap_obj.collect()
+    indicators.GCOVCollect(object_path, ignore_object).collect()
+    indicators.StapCollect(object_path, ignore_object).collect()
+
+
+@indicators_group.command('static-collect')
+@click.option('--commit-sha1', '-c1', nargs=1, required=False, default=None,  metavar='<hash>', is_eager=True,
+              help="The SHA has of the commit-1 to evaluate indicators.")
+@click.option('--commit-sha2', '-c2', nargs=1, required=True, default=None,  metavar='<hash>', is_eager=True,
+              help="The SHA has of the commit-2 to evaluate indicators.")
+@click.option('--object-path', '-o', nargs=1, required=False,
+              type=click.Path(exists=True, readable=True), metavar='<path>',
+              help='The directory containing the gcov data files, or the object path name.')
+def static_collect(object_path, commit_sha1, commit_sha2):
+    """
+    TODO documentation
+    """
+    indicators.StaticCollect(object_path, commit_sha2, commit_sha1).run()
 
 
 @indicators_group.command('evaluate')
@@ -284,5 +295,4 @@ def evaluate_indicators(minor_version):
     """
     TODO documentation
     """
-    eval_obj = indicators.Evaluate(minor_version=minor_version)
-    eval_obj.evaluate()
+    indicators.Evaluate(commit_sha2=minor_version).evaluate()

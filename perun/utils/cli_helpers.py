@@ -15,6 +15,7 @@ import json
 import pip
 import click
 import jinja2
+import git
 
 import perun
 import perun.profile.helpers as profiles
@@ -483,6 +484,7 @@ def check_stats_minor_callback(_, param, value):
     elif value:
         # Check the minor version existence and that it has a directory in the 'stats'
         # There are 2 possible failures - the minor version or the directory don't exist
+        value = str(git.Repo(search_parent_directories=True).rev_parse(value))
         try:
             exists, _ = stats.find_minor_stats_directory(value)
             if not exists:
