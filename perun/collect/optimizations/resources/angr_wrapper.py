@@ -46,7 +46,7 @@ def extract(stats_name, binary, cache, **kwargs):
 
         providers_dir = os.path.dirname(os.path.realpath(__file__))
         angr_provider = os.path.join(providers_dir, 'angr_provider.py')
-        cmd = '{} {} {}'.format('python3.6', angr_provider, angr_config.abspath)
+        cmd = '{} {} {}'.format('python3.8', angr_provider, angr_config.abspath)
         utils.run_safely_external_command(cmd)
         with open(cg_json.abspath, 'r') as cg_handle:
             return json.load(cg_handle)

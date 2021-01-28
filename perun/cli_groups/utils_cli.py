@@ -273,26 +273,31 @@ def dynamic_collect(object_path, ignore_object):
 
 
 @indicators_group.command('static-collect')
-@click.option('--commit-sha1', '-c1', nargs=1, required=False, default=None,  metavar='<hash>', is_eager=True,
+@click.option('--commit-sha', '-c', nargs=1, required=False, default=None,  metavar='<hash>', is_eager=True,
+              help="The SHA has of the commit to evaluate indicators.")
+@click.option('--object-path', '-o', nargs=1, required=False,
+              type=click.Path(exists=True, readable=True), metavar='<path>',
+              help='The directory containing the gcov data files, or the object path name.')
+def static_collect(object_path, commit_sha):
+    """
+    TODO documentation
+    """
+    indicators.AngrCollect(object_path, commit_sha).run()
+
+
+@indicators_group.command('evaluate')
+@click.option('--commit-sha-1', '-c1', nargs=1, required=False, default=None,  metavar='<hash>', is_eager=True,
+              callback=cli_helpers.check_stats_minor_callback,
               help="The SHA has of the commit-1 to evaluate indicators.")
-@click.option('--commit-sha2', '-c2', nargs=1, required=True, default=None,  metavar='<hash>', is_eager=True,
+@click.option('--commit-sha-2', '-c2', nargs=1, required=True, default=None,  metavar='<hash>', is_eager=True,
+              callback=cli_helpers.check_stats_minor_callback,
               help="The SHA has of the commit-2 to evaluate indicators.")
 @click.option('--object-path', '-o', nargs=1, required=False,
               type=click.Path(exists=True, readable=True), metavar='<path>',
               help='The directory containing the gcov data files, or the object path name.')
-def static_collect(object_path, commit_sha1, commit_sha2):
+def evaluate_indicators(commit_sha_2, commit_sha_1, object_path):
     """
     TODO documentation
     """
-    indicators.StaticCollect(object_path, commit_sha2, commit_sha1).run()
-
-
-@indicators_group.command('evaluate')
-@click.option('--minor-version', '-m', nargs=1, required=True, default=None,  metavar='<hash>',
-              is_eager=True, callback=cli_helpers.check_stats_minor_callback,
-              help="The minor version to evaluate the indicators between it and HEAD.")
-def evaluate_indicators(minor_version):
-    """
-    TODO documentation
-    """
-    indicators.Evaluate(commit_sha2=minor_version).evaluate()
+    indicators.StaticCollect(object_path, commit_sha_2, commit_sha_1).run()
+    indicators.Evaluate(commit_sha_2, commit_sha_1).evaluate()

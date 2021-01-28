@@ -12,16 +12,50 @@ import unidiff
 
 from shlex import split
 from subprocess import CalledProcessError, Popen, PIPE
+from termcolor import colored
 
+import perun.collect.optimizations.diff_tracing as diff
 import perun.fuzz.evaluate.by_coverage as fuzz_utils
 import perun.logic.runner as runner
 import perun.logic.stats as stats
 import perun.utils as utils
 import perun.utils.log as perun_log
+import perun.utils.decorators as decorators
+from perun.collect.optimizations.call_graph import CallGraphResource
 
+from perun.collect.optimizations.resources.angr_wrapper import extract
+from perun.collect.optimizations.structs import DiffCfgMode
+from perun.collect.optimizations.resources.perun_call_graph import store
 from perun.postprocess.regression_analysis.tools import safe_division
 
-STAP_STATS_KEYS = ["called", "insns", "cycles", "branches", "cacherefs"]
+STAP_STATS_KEYS = ["called", "insns", "cycles", "branches"]  #, "cacherefs"]
+
+
+class AngrCollect:
+    def __init__(self, object_path, commit_sha):
+        self.commit_sha = commit_sha if commit_sha is not None else \
+            git.Repo(search_parent_directories=True).head.object.hexsha
+        self.object_path = object_path
+
+    @staticmethod
+    def read_json(file):
+        with open(file) as json_file:
+            return json.load(json_file)
+
+    @staticmethod
+    def save_json(data, file):
+        with open(file, 'w') as outfile:
+            json.dump(data, outfile)
+
+    @perun_log.print_elapsed_time
+    @decorators.phase_function('angr-call-graph')
+    def run(self):
+        cmd = runner.load_job_info_from_config()["cmd"]
+        call_graph = extract(self.commit_sha, cmd[0][2:], cache=True)
+        static_collector = StaticCollect(self.object_path, self.commit_sha)
+        static_collector.get_functions_list()
+        call_graph = CallGraphResource().from_angr(call_graph, set(static_collector.functions))
+        store("call_graph", call_graph, cache=True)
 
 
 class StaticCollect:
@@ -29,9 +63,10 @@ class StaticCollect:
         self.git_diff = "git diff --ignore-blank-lines --ignore-space-at-eol --ignore-space-change --ignore-all-space "
         self.js_script = os.path.join(os.path.split(__file__)[0], "git_diff.js")
         self.repository = git.Repo(search_parent_directories=True)
-        self.object_path = object_path
+        self.commit_sha1 = commit_sha1 if commit_sha1 is not None else \
+            git.Repo(search_parent_directories=True).head.object.hexsha
         self.commit_sha2 = commit_sha2
-        self.commit_sha1 = commit_sha1
+        self.object_path = object_path
         self.filtered_functions = []
         self.bash_functions = []
         self.git_functions = []
@@ -39,15 +74,25 @@ class StaticCollect:
         self.js_changes = {}
         self.HUNK_THRESHOLD = 0.01
 
+    @perun_log.print_elapsed_time
+    @decorators.phase_function('indicators-static-collect')
     def run(self):
-        self._get_functions_list()
+        self.get_functions_list()
         self._get_git_diff_functions()
         self._get_bash_diff_functions()
         self._get_js_diff_functions()
         self.filtered_functions = self.bash_functions + list(set(self.git_functions) - set(self.bash_functions))
-        print(self.filtered_functions)
+        print(
+            "[!] Static indicators:",
+            colored(len(self.filtered_functions), "red", attrs=["bold"]), "/", len(self.functions), ";",
+            colored(round(len(self.filtered_functions) / len(self.functions), 2), "red",  attrs=["bold"])
+        )
+        # print("-f " + " -f ".join(self.filtered_functions))
 
-    def _get_functions_list(self):
+
+    @perun_log.print_elapsed_time
+    @decorators.phase_function('awk-collect')
+    def get_functions_list(self):
         regex = r"/_GLOBAL__sub_(D|I)_00100_(0|1)_[A-Za-z_]/"
         awk_command = "awk '{ if(($2 == \"T\" || $2 == \"t\") && ($3 !~ " + regex + ")) { print $3 }}'"
         for object_file in glob.iglob(self.object_path + '/*.o'):
@@ -56,6 +101,8 @@ class StaticCollect:
             self.functions.append(nm_output.decode("utf-8").splitlines())
         self.functions = [fun for funcs in self.functions for fun in funcs]
 
+    @perun_log.print_elapsed_time
+    @decorators.phase_function('js-collect')
     def _get_js_diff_functions(self):
         # Get git diff between the relevant commits
         git_diff = Popen(split(self.git_diff + self.commit_sha1 + " " + self.commit_sha2), stdout=PIPE)
@@ -63,6 +110,8 @@ class StaticCollect:
         diff, _ = js_runner.communicate()
         self.js_changes = json.loads(diff.decode("utf-8"))
 
+    @perun_log.print_elapsed_time
+    @decorators.phase_function('bash-collect')
     def _get_bash_diff_functions(self):
         # Get git diff between the relevant commits
         git_diff = Popen(split(self.git_diff + self.commit_sha1 + " " + self.commit_sha2), stdout=PIPE)
@@ -83,6 +132,8 @@ class StaticCollect:
         stdout, _ = function.communicate()
         self.bash_functions = stdout.decode("utf-8").split('\n')
 
+    @perun_log.print_elapsed_time
+    @decorators.phase_function('unidiff-collect')
     def _get_git_diff_functions(self):
         uni_diff_text = self.repository.git.diff(
             self.commit_sha1, self.commit_sha2,
@@ -110,6 +161,7 @@ class DynamicCollect:
         raise NotImplementedError("This method have to implemented in the subclass.")
 
     @perun_log.print_elapsed_time
+    @decorators.phase_function('indicators-dynamic-collect')
     def collect(self):
         job_matrix, _ = runner.construct_job_matrix(**runner.load_job_info_from_config())
         for _, workloads in job_matrix.items():
@@ -127,6 +179,8 @@ class GCOVCollect(DynamicCollect):
         self.tool = 'gcov'
         self.gcov_stats = ['blocks', 'blocks_executed', 'execution_count', 'lines']
 
+    @perun_log.print_elapsed_time
+    @decorators.phase_function('gcov-collect')
     def collect_indicators(self):
         return_code = utils.run_external_command(shlex.split(self.executable.to_escaped_string()))
         if return_code != 0:
@@ -165,6 +219,8 @@ class StapCollect(DynamicCollect):
         self.stap_keys = STAP_STATS_KEYS
         self.script_name = "func_info.stp"
 
+    @perun_log.print_elapsed_time
+    @decorators.phase_function('stap-collect')
     def collect_indicators(self):
         script_name = os.path.join(os.path.split(__file__)[0], self.script_name)
         command = 'sudo stap ' + script_name + " " + \
@@ -181,14 +237,17 @@ class StapCollect(DynamicCollect):
 
 
 class Evaluate:
-    def __init__(self, commit_sha2):
+    def __init__(self, commit_sha_2, commit_sha_1):
+        self.prev_commit_sha = commit_sha_1 if commit_sha_1 is not None else \
+            git.Repo(search_parent_directories=True).head.object.hexsha
+        self.head_commit_sha = commit_sha_2
         self.diff_stats_keys = STAP_STATS_KEYS
         self.rel_err_thresholds = {"blocks": 0.25, "blocks_executed": 0.25, "execution_count": 0.25, "lines": 0.25}
         self.fun_rate_threshold = 0.25
         self.del_func_threshold = 0.25
         self.new_func_threshold = 0.25
-        self.score_threshold = 1
-        self.commit_sha2 = commit_sha2
+        self.score_threshold = 2
+        self.functions_num = 0
         self.head_stats, self.prev_stats = {}, {}
         self.head_gcov_stats, self.prev_gcov_stats = {}, {}
         self.head_gcov_stats, self.prev_head_stats = {}, {}
@@ -196,13 +255,22 @@ class Evaluate:
         self.blocks_diff, self.exec_blocks_diff, self.exec_count_diff, self.diff_loc = {}, {}, {}, {}
         self.diff_stats = {}
         self.functions_score = {}
+        self.head_call_graph, self.prev_call_graph = None, None
+        self.cgs_diff = {}
 
+    @perun_log.print_elapsed_time
+    @decorators.phase_function('indicators-evaluate')
     def evaluate(self):
         self._load_stats()
         self._evaluate_gcov_stats()
         self._evaluate_stap_stats()
         self._build_functions_score()
-        print(">> Potential filtered functions:", len(self.functions_score.keys()))
+        self._compare_call_graphs()
+        print(
+            "[!] Dynamic indicators:",
+            colored(len(self.functions_score.keys()), "red", attrs=["bold"]), "/", self.functions_num, ";",
+            colored(round(len(self.functions_score.keys()) / self.functions_num, 2), "red",  attrs=["bold"])
+        )
         # print("-f " + " -f ".join(self.functions_score.keys()))
 
     def _build_functions_score(self):
@@ -210,16 +278,26 @@ class Evaluate:
             for function in iterator.keys():
                 self.functions_score[function] = self.functions_score.get(function, 0) + 1
 
-        [update_score(functions) for functions in [self.del_funcs, self.new_funcs, self.rel_errs, self.diff_stats]]
-        diffs_list = [self.blocks_diff, self.exec_blocks_diff, self.exec_count_diff, self.diff_loc]
-        [update_score(v) for mods in diffs_list for k, v in mods.items()]
+        function_diffs = [self.del_funcs, self.new_funcs, self.rel_errs, self.diff_stats, self.cgs_diff]
+        [update_score(functions) for functions in function_diffs]
+        modules_diffs = [self.blocks_diff, self.exec_blocks_diff, self.exec_count_diff, self.diff_loc]
+        [update_score(v) for module in modules_diffs for k, v in module.items()]
         self.functions_score = {k: v for (k, v) in self.functions_score.items() if v >= self.score_threshold}
 
     def _load_stats(self):
-        self.head_stats = stats.get_stats_of('indicators')
-        self.prev_stats = stats.get_stats_of('indicators', minor_version=self.commit_sha2)
+        self.head_stats = stats.get_stats_of('indicators', minor_version=self.head_commit_sha)
+        self.prev_stats = stats.get_stats_of('indicators', minor_version=self.prev_commit_sha)
         self.head_gcov_stats, self.prev_gcov_stats = self.head_stats['gcov'], self.prev_stats['gcov']
         self.head_stap_stats, self.prev_stap_stats = self.head_stats['stap'], self.prev_stats['stap']
+        self.head_call_graph = stats.get_stats_of('call_graph', minor_version=self.head_commit_sha).get('perun_cg', {})
+        self.prev_call_graph = stats.get_stats_of('call_graph', minor_version=self.prev_commit_sha).get('perun_cg', {})
+
+    def _compare_call_graphs(self):
+        self.head_call_graph = CallGraphResource().from_dict(self.head_call_graph)
+        self.prev_call_graph = CallGraphResource().from_dict(self.prev_call_graph)
+        diff.diff_tracing(self.head_call_graph, self.prev_call_graph, False, True, DiffCfgMode.Semistrict)
+        self.cgs_diff = self.head_call_graph.get_diff()
+        # print("CG Diff Functions: ", len(self.cgs_diff))
 
     def _evaluate_gcov_stats(self):
         self.del_funcs, self.new_funcs, self.rel_errs = self._get_functions_diff()
@@ -248,7 +326,7 @@ class Evaluate:
     def _get_functions_diff(self):
         # print(">> Overall number of functions im modules:\n", {m: len({*f}) for m, f in self.head_gcov_stats.items()})
         # print(">> Overall number of modules:", len({*self.head_gcov_stats}))
-        print(">> Overall number of functions:", sum([len({*f}) for m, f in self.head_gcov_stats.items()]))
+        self.functions_num = sum([len({*f}) for m, f in self.head_gcov_stats.items()])
 
         del_functions, new_functions, rel_errors = {}, {}, {}
         for module in self.head_gcov_stats:

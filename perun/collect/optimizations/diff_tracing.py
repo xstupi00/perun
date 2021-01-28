@@ -155,22 +155,27 @@ def _compare_cfgs(funcs, renames, cfg, cfg_old, mode):
     :return set: a set of changed functions according to the CFG analysis
     """
     changes = []
+    missing_func = 0
     for func in funcs:
-        func_blocks, cfg_edges = cfg[func]['blocks'], cfg[func]['edges']
-        old_func = renames.get(func, func)
-        func_blocks_old, cfg_edges_old = cfg_old[old_func]['blocks'], cfg_old[old_func]['edges']
-        # Quick check that the number of blocks and edges is equal
-        if len(func_blocks) != len(func_blocks_old) or len(cfg_edges) != len(cfg_edges_old):
-            changes.append(func)
-            continue
-        # Compare the CFG edges
-        if not _compare_cfg_edges(cfg_edges, cfg_edges_old):
-            changes.append(func)
-            continue
-        # Compare the CFG blocks according to the mode
-        if not _compare_cfg_blocks(func_blocks, func_blocks_old, renames, _DIFFMODE_MAP[mode]):
-            changes.append(func)
-            continue
+        if func in cfg and func in cfg_old:
+            func_blocks, cfg_edges = cfg[func]['blocks'], cfg[func]['edges']
+            old_func = renames.get(func, func)
+            func_blocks_old, cfg_edges_old = cfg_old[old_func]['blocks'], cfg_old[old_func]['edges']
+            # Quick check that the number of blocks and edges is equal
+            if len(func_blocks) != len(func_blocks_old) or len(cfg_edges) != len(cfg_edges_old):
+                changes.append(func)
+                continue
+            # Compare the CFG edges
+            if not _compare_cfg_edges(cfg_edges, cfg_edges_old):
+                changes.append(func)
+                continue
+            # Compare the CFG blocks according to the mode
+            if not _compare_cfg_blocks(func_blocks, func_blocks_old, renames, _DIFFMODE_MAP[mode]):
+                changes.append(func)
+                continue
+        else:
+            missing_func += 1
+    # print("Missing Function in CGs: ", missing_func)
     return set(changes)
 
 
