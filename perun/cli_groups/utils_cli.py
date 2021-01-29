@@ -323,4 +323,21 @@ def nearest_baseline(commit_sha, object_path):
     """
     TODO documentation
     """
-    predict.NearestBaseline(commit_sha, object_path).find()
+    predict.IndicatorsPredictor(object_path, commit_sha).find_nearest_baseline()
+
+
+@predict_group.command('relevancy-for-testing')
+@click.option('--baseline-commit', '-c1', nargs=1, required=False, default=None,  metavar='<hash>', is_eager=True,
+              callback=cli_helpers.lookup_minor_version_callback,
+              help="The SHA hash of the baseline commit for testing.")
+@click.option('--testing-commit', '-c2', nargs=1, required=True, default=None,  metavar='<hash>', is_eager=True,
+              callback=cli_helpers.lookup_minor_version_callback,
+              help="The SHA hash of the testing commit to obtains its relevancy for testing wrt. baseline commit.")
+@click.option('--object-path', '-o', nargs=1, required=False,
+              type=click.Path(exists=True, readable=True), metavar='<path>',
+              help='The directory containing the gcov data files, or the object path name.')
+def relevancy_for_testing(baseline_commit, testing_commit, object_path):
+    """
+    TODO documentation
+    """
+    predict.IndicatorsPredictor(object_path, baseline_commit, testing_commit).get_relevancy_for_testing()

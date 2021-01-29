@@ -3,6 +3,8 @@ TODO
 """
 import git
 
+from termcolor import colored
+
 import perun.utils.exceptions as exceptions
 import perun.utils.decorators as decorators
 import perun.utils.log as perun_log
@@ -17,52 +19,76 @@ def edit_vim_makefile():
         )
 
 
-class NearestBaseline:
-    def __init__(self, commit_sha, object_path):
+class IndicatorsPredictor:
+    def __init__(self, object_path, commit_sha_1, commit_sha_2=None):
         self.repository = git.Repo(search_parent_directories=True)
-        self.commit_sha = commit_sha if commit_sha is not None else \
+        self.commit_sha_1 = commit_sha_1 if commit_sha_1 is not None else \
             git.Repo(search_parent_directories=True).head.object.hexsha
+        self.commit_sha_2 = commit_sha_2
         self.object_path = object_path
-        self.STATIC_THRESHOLD = 0.01
-        self.DYNAMIC_THRESHOLD = 0.005
+        self.STATIC_THRESHOLD = 0.05
+        self.DYNAMIC_THRESHOLD = 0.02
+        self.DYNAMIC_WEIGHT = 0.75
+        self.static_collector = None
+        self.evaluator = None
+
+    def _format_sha(self, sha):
+        return colored(self.repository.git.rev_parse(sha, short=6), "red",  attrs=["bold"])
 
     @perun_log.print_elapsed_time
     @decorators.phase_function('nearest-baseline')
-    def find(self):
-        for idx, commit_2 in enumerate(self.repository.iter_commits(self.commit_sha)):
-            if commit_2.hexsha == self.commit_sha:
+    def find_nearest_baseline(self):
+        for idx, commit_2 in enumerate(self.repository.iter_commits(self.commit_sha_1)):
+            self.commit_sha_2 = commit_2.hexsha
+            if self.commit_sha_2 == self.commit_sha_1:
                 continue
-            static_collector = indicators.StaticCollect(self.object_path, commit_2.hexsha, self.commit_sha)
-            static_collector.run()
-            evaluator = indicators.Evaluate(commit_2.hexsha, self.commit_sha)
-            self.dynamic_evaluation(evaluator, commit_2.hexsha)
-            if static_collector.functions_rate >= self.STATIC_THRESHOLD and \
-                    evaluator.functions_rate >= self.DYNAMIC_THRESHOLD:
-                print("Nearest baseline: " + commit_2.hexsha + " (skipped " + str(idx) + ")")
+            self._collect_and_evaluate()
+            if self.static_collector.functions_rate >= self.STATIC_THRESHOLD and \
+                    self.evaluator.functions_rate >= self.DYNAMIC_THRESHOLD:
+                print("Nearest baseline: " + self._format_sha(self.commit_sha_2) + " (skipped " + str(idx) + ")")
                 break
 
-    def dynamic_evaluation(self, evaluator, commit_sha_2):
-        self._check_and_load_stats(evaluator, self.commit_sha, head=True)
-        self._check_and_load_stats(evaluator, commit_sha_2, head=False)
-        evaluator.evaluate()
+    @perun_log.print_elapsed_time
+    @decorators.phase_function('relevancy-for-testing')
+    def get_relevancy_for_testing(self):
+        self._collect_and_evaluate()
+        static_relevancy = self.static_collector.functions_rate / self.STATIC_THRESHOLD
+        dynamic_relevancy = self.evaluator.functions_rate / self.DYNAMIC_THRESHOLD
+        final_relevancy = (static_relevancy * (1 - self.DYNAMIC_WEIGHT) + dynamic_relevancy * self.DYNAMIC_WEIGHT) / 2
+        final_relevancy = round(min(final_relevancy, 1.0), 2)
+        print(
+            "[!] Testing relevancy for commit", self._format_sha(self.commit_sha_2), "wrt. to",
+            self._format_sha(self.commit_sha_1), "is:", colored(final_relevancy, "red",  attrs=["bold"])
+        )
 
-    def _check_and_load_stats(self, evaluator, commit_sha, head=True):
+    def _collect_and_evaluate(self):
+        self.static_collector = indicators.StaticCollect(self.object_path, self.commit_sha_2, self.commit_sha_1)
+        self.static_collector.run()
+        self.evaluator = indicators.Evaluate(self.commit_sha_2, self.commit_sha_1)
+        self.dynamic_evaluation(self.commit_sha_2)
+
+    def dynamic_evaluation(self, commit_sha_2):
+        self._check_and_load_stats(self.commit_sha_1, head=True)
+        self._check_and_load_stats(commit_sha_2, head=False)
+        self.evaluator.evaluate()
+
+    def _check_and_load_stats(self, commit_sha, head=True):
         gcov_collector = indicators.GCOVCollect(self.object_path, [])
         stap_collector = indicators.StapCollect(self.object_path, [])
         try:
-            evaluator.load_head_stats(commit_sha) if head else evaluator.load_prev_stats(commit_sha)
+            self.evaluator.load_head_stats(commit_sha) if head else self.evaluator.load_prev_stats(commit_sha)
         except exceptions.StatsFileNotFoundException:
             orig_head = self.repository.head
             self.repository.git.checkout(commit_sha)
             edit_vim_makefile()
-            if head and not evaluator.head_call_graph:
+            if head and not self.evaluator.head_call_graph:
                 indicators.AngrCollect(self.object_path, commit_sha).run()
-            elif not head and not evaluator.prev_call_graph:
+            elif not head and not self.evaluator.prev_call_graph:
                 indicators.AngrCollect(self.object_path, commit_sha).run()
-            if head and not evaluator.head_gcov_stats:
+            if head and not self.evaluator.head_gcov_stats:
                 gcov_collector.collect()
                 stap_collector.collect()
-            elif not head and not evaluator.prev_gcov_stats:
+            elif not head and not self.evaluator.prev_gcov_stats:
                 gcov_collector.collect()
                 stap_collector.collect()
             self.repository.git.checkout(orig_head)
