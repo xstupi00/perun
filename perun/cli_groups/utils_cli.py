@@ -9,9 +9,10 @@ import click
 import perun.logic.commands as commands
 import perun.logic.temp as temp
 import perun.logic.stats as stats
-import perun.utils.indicators as indicators
-import perun.utils.script_helpers as scripts
 import perun.utils.cli_helpers as cli_helpers
+import perun.utils.indicators as indicators
+import perun.utils.predict as predict
+import perun.utils.script_helpers as scripts
 import perun.utils.log as perun_log
 from perun.utils.exceptions import ExternalEditorErrorException
 
@@ -274,7 +275,7 @@ def dynamic_collect(object_path, ignore_object):
 
 @indicators_group.command('static-collect')
 @click.option('--commit-sha', '-c', nargs=1, required=False, default=None,  metavar='<hash>', is_eager=True,
-              help="The SHA has of the commit to evaluate indicators.")
+              help="The SHA hash of the commit to evaluate indicators.")
 @click.option('--object-path', '-o', nargs=1, required=False,
               type=click.Path(exists=True, readable=True), metavar='<path>',
               help='The directory containing the gcov data files, or the object path name.')
@@ -288,10 +289,10 @@ def static_collect(object_path, commit_sha):
 @indicators_group.command('evaluate')
 @click.option('--commit-sha-1', '-c1', nargs=1, required=False, default=None,  metavar='<hash>', is_eager=True,
               callback=cli_helpers.check_stats_minor_callback,
-              help="The SHA has of the commit-1 to evaluate indicators.")
+              help="The SHA hash of the commit-1 to evaluate indicators.")
 @click.option('--commit-sha-2', '-c2', nargs=1, required=True, default=None,  metavar='<hash>', is_eager=True,
               callback=cli_helpers.check_stats_minor_callback,
-              help="The SHA has of the commit-2 to evaluate indicators.")
+              help="The SHA hash of the commit-2 to evaluate indicators.")
 @click.option('--object-path', '-o', nargs=1, required=False,
               type=click.Path(exists=True, readable=True), metavar='<path>',
               help='The directory containing the gcov data files, or the object path name.')
@@ -300,4 +301,26 @@ def evaluate_indicators(commit_sha_2, commit_sha_1, object_path):
     TODO documentation
     """
     indicators.StaticCollect(object_path, commit_sha_2, commit_sha_1).run()
-    indicators.Evaluate(commit_sha_2, commit_sha_1).evaluate()
+    indicators.Evaluate(commit_sha_2, commit_sha_1).evaluate(load=True)
+
+
+@utils_group.group('predict')
+def predict_group():
+    """
+    TODO documentation
+    """
+    pass
+
+
+@predict_group.command('nearest-baseline')
+@click.option('--commit-sha', '-c', nargs=1, required=False, default=None,  metavar='<hash>', is_eager=True,
+              callback=cli_helpers.check_stats_minor_callback,
+              help="The SHA hash of the commit to find the nearest baseline for comparison.")
+@click.option('--object-path', '-o', nargs=1, required=False,
+              type=click.Path(exists=True, readable=True), metavar='<path>',
+              help='The directory containing the gcov data files, or the object path name.')
+def nearest_baseline(commit_sha, object_path):
+    """
+    TODO documentation
+    """
+    predict.NearestBaseline(commit_sha, object_path).find()

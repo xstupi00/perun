@@ -37,16 +37,6 @@ class AngrCollect:
             git.Repo(search_parent_directories=True).head.object.hexsha
         self.object_path = object_path
 
-    @staticmethod
-    def read_json(file):
-        with open(file) as json_file:
-            return json.load(json_file)
-
-    @staticmethod
-    def save_json(data, file):
-        with open(file, 'w') as outfile:
-            json.dump(data, outfile)
-
     @perun_log.print_elapsed_time
     @decorators.phase_function('angr-call-graph')
     def run(self):
@@ -73,6 +63,7 @@ class StaticCollect:
         self.functions = []
         self.js_changes = {}
         self.HUNK_THRESHOLD = 0.01
+        self.functions_rate = 0.0
 
     @perun_log.print_elapsed_time
     @decorators.phase_function('indicators-static-collect')
@@ -82,16 +73,16 @@ class StaticCollect:
         self._get_bash_diff_functions()
         self._get_js_diff_functions()
         self.filtered_functions = self.bash_functions + list(set(self.git_functions) - set(self.bash_functions))
+        self.functions_rate = safe_division(len(self.filtered_functions), len(self.functions))
         print(
             "[!] Static indicators:",
             colored(len(self.filtered_functions), "red", attrs=["bold"]), "/", len(self.functions), ";",
-            colored(round(len(self.filtered_functions) / len(self.functions), 2), "red",  attrs=["bold"])
+            colored(round(self.functions_rate, 2), "red",  attrs=["bold"])
         )
         # print("-f " + " -f ".join(self.filtered_functions))
 
-
     @perun_log.print_elapsed_time
-    @decorators.phase_function('awk-collect')
+    @decorators.phase_function('nm-collect')
     def get_functions_list(self):
         regex = r"/_GLOBAL__sub_(D|I)_00100_(0|1)_[A-Za-z_]/"
         awk_command = "awk '{ if(($2 == \"T\" || $2 == \"t\") && ($3 !~ " + regex + ")) { print $3 }}'"
@@ -238,9 +229,9 @@ class StapCollect(DynamicCollect):
 
 class Evaluate:
     def __init__(self, commit_sha_2, commit_sha_1):
-        self.prev_commit_sha = commit_sha_1 if commit_sha_1 is not None else \
+        self.prev_commit_sha = commit_sha_2 if commit_sha_2 is not None else \
             git.Repo(search_parent_directories=True).head.object.hexsha
-        self.head_commit_sha = commit_sha_2
+        self.head_commit_sha = commit_sha_1
         self.diff_stats_keys = STAP_STATS_KEYS
         self.rel_err_thresholds = {"blocks": 0.25, "blocks_executed": 0.25, "execution_count": 0.25, "lines": 0.25}
         self.fun_rate_threshold = 0.25
@@ -248,9 +239,9 @@ class Evaluate:
         self.new_func_threshold = 0.25
         self.score_threshold = 2
         self.functions_num = 0
-        self.head_stats, self.prev_stats = {}, {}
+        self.functions_rate = 0.0
         self.head_gcov_stats, self.prev_gcov_stats = {}, {}
-        self.head_gcov_stats, self.prev_head_stats = {}, {}
+        self.head_stap_stats, self.prev_stap_stats = {}, {}
         self.new_funcs, self.del_funcs, self.rel_errs = {}, {}, {}
         self.blocks_diff, self.exec_blocks_diff, self.exec_count_diff, self.diff_loc = {}, {}, {}, {}
         self.diff_stats = {}
@@ -261,21 +252,23 @@ class Evaluate:
     @perun_log.print_elapsed_time
     @decorators.phase_function('indicators-evaluate')
     def evaluate(self):
-        self._load_stats()
+        self.load_head_stats(self.head_commit_sha)
+        self.load_prev_stats(self.prev_commit_sha)
         self._evaluate_gcov_stats()
         self._evaluate_stap_stats()
-        self._build_functions_score()
         self._compare_call_graphs()
+        self._build_functions_score()
+        self.functions_rate = safe_division(len(self.functions_score.keys()), self.functions_num)
         print(
             "[!] Dynamic indicators:",
             colored(len(self.functions_score.keys()), "red", attrs=["bold"]), "/", self.functions_num, ";",
-            colored(round(len(self.functions_score.keys()) / self.functions_num, 2), "red",  attrs=["bold"])
+            colored(round(self.functions_rate, 2), "red",  attrs=["bold"])
         )
         # print("-f " + " -f ".join(self.functions_score.keys()))
 
     def _build_functions_score(self):
         def update_score(iterator):
-            for function in iterator.keys():
+            for function in iterator.keys() if isinstance(iterator, dict) else iterator:
                 self.functions_score[function] = self.functions_score.get(function, 0) + 1
 
         function_diffs = [self.del_funcs, self.new_funcs, self.rel_errs, self.diff_stats, self.cgs_diff]
@@ -284,13 +277,17 @@ class Evaluate:
         [update_score(v) for module in modules_diffs for k, v in module.items()]
         self.functions_score = {k: v for (k, v) in self.functions_score.items() if v >= self.score_threshold}
 
-    def _load_stats(self):
-        self.head_stats = stats.get_stats_of('indicators', minor_version=self.head_commit_sha)
-        self.prev_stats = stats.get_stats_of('indicators', minor_version=self.prev_commit_sha)
-        self.head_gcov_stats, self.prev_gcov_stats = self.head_stats['gcov'], self.prev_stats['gcov']
-        self.head_stap_stats, self.prev_stap_stats = self.head_stats['stap'], self.prev_stats['stap']
-        self.head_call_graph = stats.get_stats_of('call_graph', minor_version=self.head_commit_sha).get('perun_cg', {})
-        self.prev_call_graph = stats.get_stats_of('call_graph', minor_version=self.prev_commit_sha).get('perun_cg', {})
+    def load_head_stats(self, commit_sha):
+        self.head_call_graph = stats.get_stats_of('call_graph', minor_version=commit_sha).get('perun_cg', {})
+        stats_data = stats.get_stats_of('indicators', minor_version=commit_sha)
+        self.head_gcov_stats = stats_data.get('gcov', {})
+        self.head_stap_stats = stats_data.get('stap', {})
+
+    def load_prev_stats(self, commit_sha):
+        self.prev_call_graph = stats.get_stats_of('call_graph', minor_version=commit_sha).get('perun_cg', {})
+        stats_data = stats.get_stats_of('indicators', minor_version=commit_sha)
+        self.prev_gcov_stats = stats_data.get('gcov', {})
+        self.prev_stap_stats = stats_data.get('stap', {})
 
     def _compare_call_graphs(self):
         self.head_call_graph = CallGraphResource().from_dict(self.head_call_graph)
