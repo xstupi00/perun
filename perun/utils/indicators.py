@@ -28,7 +28,7 @@ from perun.collect.optimizations.structs import DiffCfgMode
 from perun.collect.optimizations.resources.perun_call_graph import store
 from perun.postprocess.regression_analysis.tools import safe_division
 
-STAP_STATS_KEYS = ["called", "insns", "cycles", "branches"]  #, "cacherefs"]
+STAP_STATS_KEYS = ["called", "insns", "cycles", "branches"]  # , "cacherefs"]
 
 
 class AngrCollect:
@@ -77,7 +77,7 @@ class StaticCollect:
         print(
             "[!] Static indicators:",
             colored(len(self.filtered_functions), "red", attrs=["bold"]), "/", len(self.functions), ";",
-            colored(round(self.functions_rate, 2), "red",  attrs=["bold"])
+            colored(round(self.functions_rate, 2), "red", attrs=["bold"])
         )
         # print("-f " + " -f ".join(self.filtered_functions))
 
@@ -98,8 +98,8 @@ class StaticCollect:
         # Get git diff between the relevant commits
         git_diff = Popen(split(self.git_diff + self.commit_sha1 + " " + self.commit_sha2), stdout=PIPE)
         js_runner = Popen(split("node " + self.js_script), stdin=git_diff.stdout, stdout=PIPE)
-        diff, _ = js_runner.communicate()
-        self.js_changes = json.loads(diff.decode("utf-8"))
+        js_diff, _ = js_runner.communicate()
+        self.js_changes = json.loads(js_diff.decode("utf-8"))
 
     @perun_log.print_elapsed_time
     @decorators.phase_function('bash-collect')
@@ -228,10 +228,11 @@ class StapCollect(DynamicCollect):
 
 
 class Evaluate:
-    def __init__(self, commit_sha_2, commit_sha_1):
+    def __init__(self, commit_sha_2, commit_sha_1, filtering=True):
         self.prev_commit_sha = commit_sha_2 if commit_sha_2 is not None else \
             git.Repo(search_parent_directories=True).head.object.hexsha
         self.head_commit_sha = commit_sha_1
+        self.filtering = filtering
         self.diff_stats_keys = STAP_STATS_KEYS
         self.rel_err_thresholds = {"blocks": 0.25, "blocks_executed": 0.25, "execution_count": 0.25, "lines": 0.25}
         self.fun_rate_threshold = 0.25
@@ -262,7 +263,7 @@ class Evaluate:
         print(
             "[!] Dynamic indicators:",
             colored(len(self.functions_score.keys()), "red", attrs=["bold"]), "/", self.functions_num, ";",
-            colored(round(self.functions_rate, 2), "red",  attrs=["bold"])
+            colored(round(self.functions_rate, 2), "red", attrs=["bold"])
         )
         # print("-f " + " -f ".join(self.functions_score.keys()))
 
@@ -275,7 +276,9 @@ class Evaluate:
         [update_score(functions) for functions in function_diffs]
         modules_diffs = [self.blocks_diff, self.exec_blocks_diff, self.exec_count_diff, self.diff_loc]
         [update_score(v) for module in modules_diffs for k, v in module.items()]
-        self.functions_score = {k: v for (k, v) in self.functions_score.items() if v >= self.score_threshold}
+        self.functions_score = {
+            k: v for (k, v) in self.functions_score.items() if v >= self.score_threshold or not self.filtering
+        }
 
     def load_head_stats(self, commit_sha):
         self.head_call_graph = stats.get_stats_of('call_graph', minor_version=commit_sha).get('perun_cg', {})
@@ -311,6 +314,7 @@ class Evaluate:
         return safe_division(abs(x - y), x) if x > y else safe_division(abs(y - x), y)
 
     def _get_diff_stats(self):
+        # TODO: filtering?
         diff_stats = {}
         for function in self.head_stap_stats:
             head_func = self.head_stap_stats[function]
@@ -335,15 +339,16 @@ class Evaluate:
 
         # print(">> Filtered modules by rel_err:",
         #       len({k: v for (k, v) in rel_errors.items() if v < self.fun_rate_threshold}))
-        rel_errors = {k: v for (k, v) in rel_errors.items() if v >= self.fun_rate_threshold}
+        rel_errors = {k: v for (k, v) in rel_errors.items() if v >= self.fun_rate_threshold or not self.filtering}
 
         # print(">> Filtered modules by del_fun:",
         #       len({k: v for (k, v) in del_functions.items() if v < self.del_func_threshold}))
-        del_functions = {k: v for (k, v) in del_functions.items() if v >= self.del_func_threshold}
+        del_functions = {k: v for (k, v) in del_functions.items() if v >= self.del_func_threshold or not self.filtering}
 
         # print(">> Filtered modules by new_fun:",
         #       len({k: v for (k, v) in new_functions.items() if v < self.new_func_threshold}))
-        new_functions = {k: v for (k, v) in new_functions.items() if v >= self.new_func_threshold}
+        new_functions = {k: v for (k, v) in new_functions.items() if v >= self.new_func_threshold or not self.filtering}
+
         return del_functions, new_functions, rel_errors
 
     def _get_rel_errors_of(self, key):
@@ -357,4 +362,5 @@ class Evaluate:
 
         # print(">> Filtered functions in modules by " + key + ":")
         # print({m: len({f: v for f, v in s.items() if v < self.rel_err_thresholds[key]}) for m, s in rel_errors.items()})
-        return {m: {f: v for f, v in s.items() if v >= self.rel_err_thresholds[key]} for m, s in rel_errors.items()}
+        return {m: {f: v for f, v in s.items() if v >= self.rel_err_thresholds[key] or not self.filtering}
+                for m, s in rel_errors.items()}

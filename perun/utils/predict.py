@@ -33,7 +33,7 @@ class IndicatorsPredictor:
         self.evaluator = None
 
     def _format_sha(self, sha):
-        return colored(self.repository.git.rev_parse(sha, short=6), "red",  attrs=["bold"])
+        return colored(self.repository.git.rev_parse(sha, short=6), "red", attrs=["bold"])
 
     @perun_log.print_elapsed_time
     @decorators.phase_function('nearest-baseline')
@@ -58,13 +58,33 @@ class IndicatorsPredictor:
         final_relevancy = round(min(final_relevancy, 1.0), 2)
         print(
             "[!] Testing relevancy for commit", self._format_sha(self.commit_sha_2), "wrt. to",
-            self._format_sha(self.commit_sha_1), "is:", colored(final_relevancy, "red",  attrs=["bold"])
+            self._format_sha(self.commit_sha_1), "is:", colored(final_relevancy, "red", attrs=["bold"])
+        )
+
+    @perun_log.print_elapsed_time
+    @decorators.phase_function('relevancy-for-measuring')
+    def get_relevancy_for_measuring(self, function):
+        weights = [1/8] * 8
+        distribution = []
+        self._collect_and_evaluate()
+        for diff_iter in [
+            self.evaluator.blocks_diff, self.evaluator.exec_blocks_diff,
+            self.evaluator.exec_count_diff, self.evaluator.diff_loc
+        ]:
+            [distribution.append(v) for m, fs in diff_iter.items() for f, v in fs.items() if f == function]
+        [distribution.extend([v for v in v.values()]) for f, v in self.evaluator.diff_stats.items() if f == function]
+        w_avg = round(sum([distribution[i] * weights[i] for i in range(len(distribution))]) / sum(weights), 2)
+        in_static = function in self.static_collector.filtered_functions
+        print(
+            "[!] Measuring relevancy for function", colored(function, "red", attrs=["bold"]), "for commit",
+            self._format_sha(self.commit_sha_2), "wrt. to", self._format_sha(self.commit_sha_1),
+            "is:", colored(str(w_avg) + " (" + str(in_static) + ")", "red", attrs=["bold"])
         )
 
     def _collect_and_evaluate(self):
         self.static_collector = indicators.StaticCollect(self.object_path, self.commit_sha_2, self.commit_sha_1)
         self.static_collector.run()
-        self.evaluator = indicators.Evaluate(self.commit_sha_2, self.commit_sha_1)
+        self.evaluator = indicators.Evaluate(self.commit_sha_2, self.commit_sha_1, filtering=False)
         self.dynamic_evaluation(self.commit_sha_2)
 
     def dynamic_evaluation(self, commit_sha_2):

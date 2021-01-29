@@ -274,7 +274,7 @@ def dynamic_collect(object_path, ignore_object):
 
 
 @indicators_group.command('static-collect')
-@click.option('--commit-sha', '-c', nargs=1, required=False, default=None,  metavar='<hash>', is_eager=True,
+@click.option('--commit-sha', '-c', nargs=1, required=False, default=None, metavar='<hash>', is_eager=True,
               help="The SHA hash of the commit to evaluate indicators.")
 @click.option('--object-path', '-o', nargs=1, required=False,
               type=click.Path(exists=True, readable=True), metavar='<path>',
@@ -287,10 +287,10 @@ def static_collect(object_path, commit_sha):
 
 
 @indicators_group.command('evaluate')
-@click.option('--commit-sha-1', '-c1', nargs=1, required=False, default=None,  metavar='<hash>', is_eager=True,
+@click.option('--commit-sha-1', '-c1', nargs=1, required=False, default=None, metavar='<hash>', is_eager=True,
               callback=cli_helpers.check_stats_minor_callback,
               help="The SHA hash of the commit-1 to evaluate indicators.")
-@click.option('--commit-sha-2', '-c2', nargs=1, required=True, default=None,  metavar='<hash>', is_eager=True,
+@click.option('--commit-sha-2', '-c2', nargs=1, required=True, default=None, metavar='<hash>', is_eager=True,
               callback=cli_helpers.check_stats_minor_callback,
               help="The SHA hash of the commit-2 to evaluate indicators.")
 @click.option('--object-path', '-o', nargs=1, required=False,
@@ -301,7 +301,7 @@ def evaluate_indicators(commit_sha_2, commit_sha_1, object_path):
     TODO documentation
     """
     indicators.StaticCollect(object_path, commit_sha_2, commit_sha_1).run()
-    indicators.Evaluate(commit_sha_2, commit_sha_1).evaluate(load=True)
+    indicators.Evaluate(commit_sha_2, commit_sha_1).evaluate()
 
 
 @utils_group.group('predict')
@@ -313,7 +313,7 @@ def predict_group():
 
 
 @predict_group.command('nearest-baseline')
-@click.option('--commit-sha', '-c', nargs=1, required=False, default=None,  metavar='<hash>', is_eager=True,
+@click.option('--commit-sha', '-c', nargs=1, required=False, default=None, metavar='<hash>', is_eager=True,
               callback=cli_helpers.check_stats_minor_callback,
               help="The SHA hash of the commit to find the nearest baseline for comparison.")
 @click.option('--object-path', '-o', nargs=1, required=False,
@@ -327,10 +327,10 @@ def nearest_baseline(commit_sha, object_path):
 
 
 @predict_group.command('relevancy-for-testing')
-@click.option('--baseline-commit', '-c1', nargs=1, required=False, default=None,  metavar='<hash>', is_eager=True,
+@click.option('--baseline-commit', '-c1', nargs=1, required=False, default=None, metavar='<hash>', is_eager=True,
               callback=cli_helpers.lookup_minor_version_callback,
               help="The SHA hash of the baseline commit for testing.")
-@click.option('--testing-commit', '-c2', nargs=1, required=True, default=None,  metavar='<hash>', is_eager=True,
+@click.option('--testing-commit', '-c2', nargs=1, required=True, default=None, metavar='<hash>', is_eager=True,
               callback=cli_helpers.lookup_minor_version_callback,
               help="The SHA hash of the testing commit to obtains its relevancy for testing wrt. baseline commit.")
 @click.option('--object-path', '-o', nargs=1, required=False,
@@ -341,3 +341,22 @@ def relevancy_for_testing(baseline_commit, testing_commit, object_path):
     TODO documentation
     """
     predict.IndicatorsPredictor(object_path, baseline_commit, testing_commit).get_relevancy_for_testing()
+
+
+@predict_group.command('relevancy-for-measuring')
+@click.option('--baseline-commit', '-c1', nargs=1, required=False, default=None, metavar='<hash>', is_eager=True,
+              callback=cli_helpers.lookup_minor_version_callback,
+              help="The SHA hash of the baseline commit for testing.")
+@click.option('--testing-commit', '-c2', nargs=1, required=True, default=None, metavar='<hash>', is_eager=True,
+              callback=cli_helpers.lookup_minor_version_callback,
+              help="The SHA hash of the testing commit to obtains its relevancy for testing wrt. baseline commit.")
+@click.option('--function', '-f', nargs=1, required=True, metavar=str,
+              help="The function for check its relevancy for measure the changes within given commit.")
+@click.option('--object-path', '-o', nargs=1, required=False,
+              type=click.Path(exists=True, readable=True), metavar='<path>',
+              help='The directory containing the gcov data files, or the object path name.')
+def relevancy_for_testing(baseline_commit, testing_commit, function, object_path):
+    """
+    TODO documentation
+    """
+    predict.IndicatorsPredictor(object_path, baseline_commit, testing_commit).get_relevancy_for_measuring(function)
